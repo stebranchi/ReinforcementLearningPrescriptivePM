@@ -1,23 +1,27 @@
-import pm4py
 import time
 import pickle
 import copy
 import numpy as np
 import pandas as pd
 from sklearn.cluster import AffinityPropagation
+from pm4py import read_xes, write_xes
 from pm4py.objects.log.obj import Event, EventLog, Trace
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import OneHotEncoder
+from pm4py.algo.filtering.log.attributes import attributes_filter
 
-PATH = "../data/BPI2013/BPI_2012_log_eng_rewards_and_durations.xes"
+PATH = "../../data/logs/BPI_2012/BPI_2012_log_eng_rewards_and_durations.xes"
+PATH_COMPUTE_CLUSTER = "../../cluster_data/output_logs/BPI2012_log_eng_all_prefixes.xes"
+PATH_CLUSTERED = '../../cluster_data/output_logs/BPI2012_log_eng_clusters100.xes'
 
-def cluster(df):
+
+def cluster(df, log):
 	print("Number of items: " + str(len(df)))
 
-	filename = '../cluster_data/models_encoders/df_base.sav'
-	pickle.dump(df, open(filename, 'wb'), protocol=4)
-	print("saved df")
+	#filename = '../../cluster_data/models_encoders/df_V2.sav'
+	#pickle.dump(df, open(filename, 'wb'), protocol=4)
+	#print("saved df")
 
 	#affprop = AffinityPropagation(affinity="euclidean", damping=0.9, max_iter=1000, verbose=True)
 	np.nan_to_num(df)
@@ -35,12 +39,19 @@ def cluster(df):
 	except Exception as e:
 		print("ERROR CLUSTERS:" + str(e))
 
-	filename = '../cluster_data/models_encoders/affinityPropBase.sav'
+	filename = '../cluster_data/models_encoders/affinityPropV2.sav'
 	pickle.dump(affprop, open(filename, 'wb'), protocol=4)"""
 
-	kmeans = KMeans(n_clusters=300, random_state=0).fit(df)
+	kmeans = KMeans(n_clusters=100, random_state=0).fit(df)
+	trace_clusters_results = dict()
+	for i, row in enumerate(df.transpose()):
+		trace_clusters_results[row] = kmeans.labels_[i]
 
-	filename = '../cluster_data/models_encoders/kmeansBase.sav'
+	for trace in log:
+		trace.attributes["cluster:trace"] = trace_clusters_results[trace.attributes["prefix:name"]]
+
+	write_xes(log, PATH_CLUSTERED)
+	filename = '../../cluster_data/models_encoders/kmeansV2_100.sav'
 	pickle.dump(kmeans, open(filename, 'wb'), protocol=4)
 
 
@@ -98,8 +109,46 @@ def computeClusterForTrace(path_affprop, path_kmean, path_df, path_mms, path_one
 			tmp.attributes["kmeanCluster"] = kmean_res[0]"""
 			elog.append(copy.deepcopy(tmp))
 
-	pm4py.write_xes(elog, "../cluster_data/output_logs/BPI2012_testing_20_clusters_all_prefixes.xes")
+	write_xes(elog, "../../cluster_data/output_logs/BPI2012_testing_20_clusters_all_prefixes.xes")
 
+
+def filterClusteredLog(log):
+	output_log = EventLog()
+	for name, value in log.attributes.items():
+		output_log.attributes[name] = value
+	for name, value in log.extensions.items():
+		output_log.extensions[name] = value
+	for name, value in log.classifiers.items():
+		output_log.classifiers[name] = value
+	complete_trace = None
+	current_trace_id = log[0].attributes["concept:name"]
+	prefixes_cluster = dict()
+	for trace in log:
+		if trace.attributes["concept:name"] == "198454":
+			print("Bella")
+		if trace[-1]["concept:name"] == "END":
+			complete_trace = trace
+		if trace.attributes["concept:name"] != current_trace_id:
+			try:
+				for prefix_length, cluster_value in prefixes_cluster.items():
+					complete_trace[prefix_length-1]["cluster:prefix"] = cluster_value
+				output_log.append(complete_trace)
+			except:
+				print(current_trace_id)
+				print(trace.attributes["concept:name"] + '\n\n')
+			current_trace_id = trace.attributes["concept:name"]
+			prefixes_cluster = dict()
+			complete_trace = None
+		prefixes_cluster[len(trace)] = trace.attributes["cluster:trace"]
+
+	if complete_trace:
+		for prefix_length, cluster_value in prefixes_cluster.items():
+			complete_trace[prefix_length-1]["cluster:prefix"] = cluster_value
+		output_log.append(complete_trace)
+
+	path = PATH_COMPUTE_CLUSTER.replace("_all_prefixes.xes", "_clusters_squashed.xes")
+
+	write_xes(output_log, path)
 
 def prepareLog(log):
 	max_length = 0
@@ -139,6 +188,7 @@ def createDataFrequency(log):
 	for trace in log:
 		# Initializing a copy of the trace in order to add each prefix to the dataframe
 		tmp = Trace()
+		tmp.attributes["concept:name"] = trace.attributes["concept:name"]
 		events_dict = dict()
 		amount = 0
 		# Initializing a dictionary to store the number of occurrences for each event
@@ -151,7 +201,7 @@ def createDataFrequency(log):
 				events_dict[event["concept:name"]] += 1
 			# Changing trace name to easy find the cluster of the trace
 			trace_name = 'trace_%i' % i
-			tmp.attributes["concept:name"] = trace_name
+			tmp.attributes["prefix:name"] = trace_name
 			if "AMOUNT_REQ" in trace.attributes.keys():
 				amount = int(trace.attributes["AMOUNT_REQ"])
 			# Initializing a new row of the dataset
@@ -170,7 +220,7 @@ def createDataFrequency(log):
 			data.loc[trace_name] = [float(x) for x in to_add]
 			elog.append(copy.deepcopy(tmp))
 			i+=1
-	# pm4py.write_xes(elog, "../cluster_data/output_logs/BPI2012_log_eng_all_prefixes.xes")
+	write_xes(elog, PATH_COMPUTE_CLUSTER)
 	# Initializing a MinMaxScaler for each continuous column: reward and amount
 	mms_amount = MinMaxScaler()
 	mms_reward = MinMaxScaler()
@@ -187,13 +237,13 @@ def createDataFrequency(log):
 	onehot.index = data.index
 	data = pd.concat([data, onehot], axis=1, ignore_index=True)
 	"""
-	filename = '../cluster_data/models_encoders/minMaxScalerAmountBase.sav'
+	filename = '../../cluster_data/models_encoders/minMaxScalerAmountV2.sav'
 	pickle.dump(mms_amount, open(filename, 'wb'), protocol=4)
 
-	filename = '../cluster_data/models_encoders/minMaxScalerRewBase.sav'
+	filename = '../../cluster_data/models_encoders/minMaxScalerRewV2.sav'
 	pickle.dump(mms_reward, open(filename, 'wb'), protocol=4)
 
-	filename = '../cluster_data/models_encoders/oneHotEncoderBase.sav'
+	filename = '../../cluster_data/models_encoders/oneHotEncoderV2.sav'
 	pickle.dump(enc, open(filename, 'wb'), protocol=4)"""
 	return data
 
@@ -204,15 +254,29 @@ def debugDfValues(path_df):
 
 	print(df)
 
+def debugLog(log):
+	trace_set = set()
+	complete_trace_counter = 0
+	for trace in log:
+		trace_set.add(trace.attributes["concept:name"])
+		if trace[-1]["concept:name"] == "END":
+			complete_trace_counter += 1
+
+
+	print("number of traces: " + str(len(trace_set)))
+	print("number of complete traces: " + str(complete_trace_counter))
 
 if __name__ == "__main__":
 	t1 = time.time()
-	log = pm4py.read_xes(PATH)
-	data = createDataFrequency(log)
-	#cluster(data)
+	#log = read_xes(PATH)
+	#data = createDataFrequency(log)
+	#cluster(data, log)
+	cluster(pickle.load(open('../../cluster_data/models_encoders/df_V2.sav', 'rb')), read_xes(PATH_COMPUTE_CLUSTER))
 	#computeClusterForTrace("../cluster_data/models_encoders/affinityPropNoLastEvent.sav", "../cluster_data/models_encoders/kmeansNoLastEvent.sav", "../cluster_data/models_encoders/minMaxScaler.sav", "../cluster_data/models_encoders/oneHotEncoder.sav", log)
 	#computeClusterForTrace("../cluster_data/models_encoders/affinityPropNoLastEvent.sav", "../cluster_data/models_encoders/kmeansNoLastEvent.sav", "../cluster_data/models_encoders/df.sav", "../cluster_data/models_encoders/minMaxScaler.sav", "../cluster_data/models_encoders/oneHotEncoder.sav", log)
 	#debugDfValues("../cluster_data/models_encoders/df.sav")
+	filterClusteredLog(read_xes(PATH_CLUSTERED))
+	#debugLog(read_xes(PATH_CLUSTERED))
 	t2 = time.time()
 	print(t2-t1)
 

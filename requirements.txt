@@ -1,3 +1,4 @@
 pm4py~=2.2.7.1
 numpy~=1.19.5
 tensorflow~=2.4.1
+scikit-learn~=0.19.2

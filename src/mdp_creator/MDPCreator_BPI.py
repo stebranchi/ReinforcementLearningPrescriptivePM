@@ -22,10 +22,10 @@ def main():
 	#WORKING VERSION
 	dfg_dict = dict()
 	for trace in tracefilter_log_pos:
-		event_name = getEventResourceName(trace[0])
+		event_name = getEventResourceName_cluster(trace[0])
 		for event in trace:
 			if event['concept:name'] != 'START':
-				new_event_name = getEventResourceName(event)
+				new_event_name = getEventResourceName_cluster(event)
 				key = (event_name, new_event_name)
 				duration_dict[key] = {'starts': list(), 'ends': list(), 'count': 0, 'sum': 0, 'duration': 0}
 				event_name = new_event_name
@@ -36,10 +36,10 @@ def main():
 
 	for trace in tracefilter_log_pos:
 		start = trace[0]['time:timestamp']
-		event_name = getEventResourceName(trace[0])
+		event_name = getEventResourceName_cluster(trace[0])
 		for event in trace:
 			if event['concept:name'] != 'START' and event['concept:name'] != 'END':
-				new_event_name = getEventResourceName(event)
+				new_event_name = getEventResourceName_cluster(event)
 				if "duration" in event.keys():
 					duration_dict[(event_name, new_event_name)]["sum"] += int(event["duration"])
 					duration_dict[(event_name, new_event_name)]["count"] += 1
@@ -150,6 +150,9 @@ def main():
 	for row in csv:
 		out.write(','.join([str(x) for x in row]) + '\n')
 	out.close()
+
+def getEventResourceName_cluster(event):
+	return "<" + event["concept:name"] + " | " + event["cluster"] + ">"
 
 
 def getEventResourceName_no_wfix(event):
@@ -296,9 +299,6 @@ def preprocessBPI():
 	xes_exporter.apply(tracefilter_log_pos_5, MID_OUTPUT_PATH)
 	print("end")
 
-def addRewardToTraces():
-	PATH = os.path.join("..", "final_evaluation", "BPI", "Log", "BPI_2012_log_eng_testing_20.xes")
-	OUTPUT_PATH = PATH.replace('.xes', '_preprocessed_number_incr_wfix.xes')
 
 if __name__ == "__main__":
 	#preprocessBPI()

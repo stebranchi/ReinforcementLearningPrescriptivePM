@@ -2,12 +2,18 @@ import os
 import numpy as np
 import pm4py
 import datetime
-from MDPCreator_BPI import getEventResourceName
 from pm4py.objects.log.obj import EventLog
 from pm4py.objects.log.exporter.xes import exporter as xes_exporter
 from pm4py.algo.filtering.log.attributes import attributes_filter
 from pm4py.objects.log.obj import Event
 
+def getEventResourceName(event):
+	if event["concept:name"] == 'START' or event["concept:name"] == 'END':
+		return "<" + event["concept:name"] + ">"
+	if "amount" in event.keys():
+		return "<" + event["concept:name"] + " - " + str(event["amount"]) + " - " + str(event["n_calls_after_offer"]) + " - " + str(event["n_calls_missing_doc"]) + " - " + str(event["number_of_offers"]) + " - " + str(event["number_of_sent_back"]) + " - " + str(event["W_Fix_incoplete_submission"]) + ">"
+	else:
+		return "<" + event["concept:name"] + ">"
 
 def remove_q():
 	policy_path = os.path.join("..", "data", "output", "new_tests", "BPI_2012_log_eng_preprocessed_filtered_reward.csv")
@@ -103,11 +109,10 @@ def find_event():
 				print(trace.attributes["concept:name"])
 
 
-def splitLog():
-	policy_path = os.path.join("..", "old_final_evaluation", "Fine", "log", "Road_Traffic_Fine_Management_Process_filter_dismissal.xes")
-	tracefilter_log_pos = pm4py.read_xes(policy_path)
-	output_training = os.path.join("..", "final_evaluation", "Fine", "Log", "Road_Traffic_Fine_training_80.xes")
-	output_testing = os.path.join("..", "final_evaluation", "Fine", "Log", "Road_Traffic_Fine_testing_20.xes")
+def splitLog(log_path):
+	tracefilter_log_pos = pm4py.read_xes(log_path)
+	output_training = log_path.replace(".xes", "_training_80.xes")
+	output_testing = log_path.replace(".xes", "_testing_20.xes")
 
 	traces_list = [x for x in tracefilter_log_pos]
 	train_l = int(len(traces_list) / 100 * 80)
@@ -229,7 +234,7 @@ if __name__ == '__main__':
 	#zero_q()
 	#parsemdp()
 	#find_event()
-	#splitLog()
+	splitLog("../../cluster_data/output_logs/BPI2012_log_eng_clusters_squashed.xes")
 	#count()
 	#scale_reward()
-	addDurationReward("../data/BPI2013/BPI_2012_log_eng.xes")
+	#addDurationReward("../data/BPI2013/BPI_2012_log_eng.xes")
