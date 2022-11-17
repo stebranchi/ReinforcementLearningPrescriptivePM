@@ -12,33 +12,33 @@ case_id_label = 'concept:name'
 event_label = 'concept:name'
 lifecycle_label = 'lifecycle:transition'
 timestamp_label = 'time:timestamp'
-attributes_label_list = ['amount', 'n_calls_after_offer', 'n_calls_missing_doc', 'number_of_offers']
+attributes_label_list = ['amount', 'n_calls_after_offer', 'n_calls_missing_doc', 'number_of_offers', 'number_of_sent_back']
 amount_label = 'amount'
 duration_label = 'duration'
 cost_factor = 0.005
-long_traces = set()
+check_single_trace = True  # analysis of one trace_id
 
 def main():
     # import log
-    # log_path = os.path.join("..", "input_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v2", "log", "BPI_2012_log_eng_training_60_mid_preprocessed.xes")
-    log_path = os.path.join("..", "final_evaluation", "BPI", "log", "BPI_2012_log_eng_testing_40_mid_preprocessed.xes")
-    #log_path = "BPI_2012_log_eng_testing_40_mid_preprocessed.xes"
+    # log_path = os.path.join("..", "input_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", "log", "BPI_2012_log_eng_training_60_mid_preprocessed_var90.xes")
+    log_path = os.path.join("..", "input_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", "log", "BPI_2012_log_eng_testing_40_mid_preprocessed_var90.xes")
     log = xes_importer.apply(log_path)
-
+    # TODO: rephrase the comment below
     full_prefix = True  # False: consider only final state of the prefix to take optimal continuations
     only_events = False  # means no resources are used in definition of states
 
     # import policy csv, must have these columns (s,a,s',p,r,q)
-    policy_file = os.path.join("..", "final_evaluation", "BPI", "output", "Trimmed BPI_2012 mdp training 60 r05 policy.csv")
-    #policy_file = "Trimmed BPI_2012 mdp training 60 r005 policy.csv"
+    policy_file = os.path.join("..", "output_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", "Trimmed BPI_2012 mdp training 60 r005 var90 scaled3 policy.csv")
 
     MDP_policy = pd.read_csv(policy_file)
     MDP_policy_val = MDP_policy.values  # converts it into array
     policy_rules_dict = get_policy_rules(MDP_policy_val, only_events)  # policy rules give a list of possible next state for each current state
 
     # output file path
-    #output_file_path = os.path.join("../../../../../../stebr", "output_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v2", "performance", "performance_single_trace_testing_40_r005.csv")
-    output_file_path = "performance_single_trace_testing_40_r05_2.csv"
+    output_file_name = "single_trace_testing_40_scaled3.csv"
+    output_file_path = os.path.join("..", "output_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", "performance", output_file_name)
+
+
     once = True  # variable used to truncate and write header of csv
 
     # dictionary with info on opt paths
@@ -54,6 +54,12 @@ def main():
         prefix = ''
         for length in range(len(case)):
             # last event and resource of the prefix is the start state for the predictive model
+            # check single prefix
+            # if check_single_trace and (trace_id != '198173' or length != 0):
+            #    continue
+            # elif check_single_trace:
+            #    print('here')
+
             start_event = case[length][event_label]
             try:
                 start_attribute_list = [case[length][attribute] for attribute in attributes_label_list]
@@ -72,19 +78,20 @@ def main():
             actual_duration = 0
             actual_accepted = 0
             actual_prize = 0
+            number_events_duration = 0
             for i in range(trace_len):
                 try:
                     actual_duration += case[i][duration_label]
+                    if case[i][duration_label] > 0:
+                        number_events_duration += 1
                 except Exception as e:
                     actual_duration += 0
-
                 if 'O_ACCEPTED' in case[i][event_label]:
                     amount = case[i][amount_label]
                     actual_accepted = 1
                     actual_prize = prize_dict[amount]
 
-            if case.attributes["concept:name"] == "199726" and length == 12:
-                ok = True
+
             # analysis_tr_sc3 get the avg duration and reward for every trace which contains initial state and follows optimal path
             # if no such trace is found then it gives back None
 
@@ -92,7 +99,7 @@ def main():
                 if prefix not in trace_analysis_dict.keys():
                     trace_analysis_dict[prefix] = analysis_tr_sc3(log, policy_rules_dict, initial_state, only_events, full_prefix, prefix)
                 opt_trace_number, opt_trace_avg_time, opt_trace_accepted_rate, opt_trace_avg_prize, \
-                compl_trace_number, compl_trace_avg_time, compl_trace_acceptance_rate, compl_trace_avg_prize = trace_analysis_dict[prefix]
+                compl_trace_number, compl_trace_avg_time, compl_trace_acceptance_rate, compl_trace_avg_prize = trace_analysis_dict[initial_state]
 
             else:
                 if initial_state not in trace_analysis_dict.keys():
@@ -163,9 +170,6 @@ def main():
                 dict_writer.writerow(line_to_print)
                 output_file.close()
 
-            with open("long_traces.txt", 'w') as out:
-                out.write(str(long_traces))
-
 
 
 def event_attributes_to_state(event, attribute_list, only_events):
@@ -214,6 +218,8 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
     complementary_case_total_time = 0
     complementary_case_accepted_number = 0
     complementary_case_total_prize = 0
+    relevant_case_id_list = []
+    relevant_case_reward = []
     prize_dict = {'no': 0, 'low': 650, 'medium': 1900, 'high': 5900}
     for case_index, case in enumerate(log):  # all case in log
         case_solved = False
@@ -223,6 +229,7 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
         prize = 0
         accepted = 0
         current_prefix = ''
+        case_id = case.attributes[case_id_label]
         for event_index, event in enumerate(case):  # all event in case
             # look only to complete events
             if True: #event[lifecycle_label].lower() == 'complete':
@@ -257,24 +264,25 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
                         good_path = True  # useless, but for clarity
                     else:
                         good_path = False
-                    # compute rewards
+                # compute rewards
                 if 'O_ACCEPTED' in event[event_label]:
                     amount = event[amount_label]
                     prize = prize_dict[amount]
-                    accepted = max(accepted, 1)
+                    accepted = 1
                 duration += current_duration
-                if duration > 26000:
-                    long_trace.add(case.attributes["concept:name"])
-                    ok = True
                 # compute next good states from the policy rules
                 try:
                     good_next_states = policy_rules[current_state]
                 except Exception as e: # in the case there is not the state in the MDP model
+                    print()
                     good_next_states = []
 
 
         if good_start:
             if good_path:
+                if check_single_trace:
+                    relevant_case_id_list.append(case_id)
+                    relevant_case_reward.append(- duration * cost_factor + prize)
                 relevant_case_number += 1
                 relevant_case_total_time += duration
                 relevant_case_accepted_number += accepted
@@ -314,6 +322,15 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
     #       ', total time:', complementary_case_total_time,
     #       ', avg time:', complementary_case_avg_time,
     #       ', avg prize:', complementary_case_avg_prize)
+
+    if check_single_trace:
+        output_name = 'relevant_trace_id_198173_scaled3.csv'
+        output_file = os.path.join("..", "output_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", 'performance', output_name)
+        with open(output_file, 'w') as f:
+            write_list = [str(relevant_case_id_list[i])+','+str(relevant_case_reward[i])
+                          for i in range(len(relevant_case_id_list))]
+            for item in write_list:
+                f.write("%s\n" % item)
 
     return relevant_case_number, relevant_case_avg_time, relevant_case_accepted_rate, relevant_case_avg_prize, \
            complementary_case_number, complementary_case_avg_time, complementary_case_accepted_rate, complementary_case_avg_prize

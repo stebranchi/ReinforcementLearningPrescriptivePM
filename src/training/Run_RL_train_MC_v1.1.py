@@ -7,7 +7,6 @@ import time
 import math
 from IPython.display import clear_output
 from pm4py.objects.log import obj as lg
-from src.mp_checkers.test_mp_checkers_traces import run_all_mp_checkers_traces
 
 def main():
     # use SARSA instead of Q-learning
@@ -26,8 +25,8 @@ def main():
     #decl_file = os.path.join("..", "data", "declare", "stefano", "Sepsis_training_90_1_unary_binary+.decl")
     #txt_file = os.path.join("..", "data", "declare", "stefano", "Sepsis_training_90_1_unary_binary+.txt")
 
-    input_file = os.path.join("..", "final_evaluation", "Fine", "Mdp", "Trimmed Traffic_Fine mdp training r3 60.csv")
-    output_file = os.path.join("..", "final_evaluation", "Fine", "Output", "Trimmed Traffic_Fine mdp training r3 60 shift0 policy.csv")
+    input_file = os.path.join("..", "..", "cluster_data", "output_mdps", "BPI2012_log_eng_positional_cumulative_squashed_training_80_preprocessed.csv")
+    output_file = os.path.join("..", "..", "cluster_data", "output_policies", "BPI2012_log_eng_positional.csv")
 
     # first and last state definition
     # first_state = 'Start' #  first state with manual simple model
@@ -52,7 +51,7 @@ def main():
     #RL hyperparameters
     alpha_max = 0.1 # initial learning rate
     alpha_min = 0.001 # final learning rate
-    gamma = 1 # discount rate, discount near to 1 avoids loops
+    gamma = 0.9 # discount rate, discount near to 1 avoids loops
     epsilon = 0.1 # discovery rate
 
     print("Training the agent")
@@ -71,6 +70,7 @@ def main():
         # linearly variable alpha: alpha=alpha_max when i=1, alpha=alpha_min when i=number_of_runs
         alpha = alpha_max - (alpha_max - alpha_min)*(i-1)/(number_of_runs-1)
         trace_i = 0
+        disc_arr = []
         while not done:
             # these three variables manage stochastic decision
             summed_probability = 0
@@ -85,7 +85,7 @@ def main():
             reward = list_of_possibilities[next_state][1]
 
             try:
-                if next_state == last_state:
+                if "END" in next_state:
                     done = True
                     next_action = ""
                 else:
@@ -109,13 +109,16 @@ def main():
                 reward = -500
                 done = True"""
 
+            # Check if is going through a loop
             if next_state in path:
                 reward = 0
                 done = True
 
             if (state, action) not in return_dict.keys():
                 return_dict[(state, action)] = 0
+                disc_arr.append((state, action))
             return_dict = {k: v + reward for k, v in return_dict.items()}
+            #return_dict = {k: return_dict[k] + (reward * gamma ** (len(disc_arr) - (n+1))) for n, k in enumerate(disc_arr)}
 
             state = next_state
             action = next_action
@@ -132,7 +135,7 @@ def main():
             old_value = q_table[state][action][0]
             new_value = return_dict[(state, action)]
             # q_table[state][action][0] = ((i-1)*old_value + new_value)/i  # compute the average (learning rate alpha = 1/i)
-            q_table[state][action][0] = (1-alpha)* old_value + alpha * new_value  # learning rate alpha defined above
+            q_table[state][action][0] = (1-alpha) * old_value + alpha * new_value  # learning rate alpha defined above
 
         # print episode number
         if i % 10000 == 0:

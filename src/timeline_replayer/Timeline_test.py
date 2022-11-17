@@ -10,12 +10,12 @@ from pm4py.objects.log.exporter.xes import exporter as xes_exporter
 import pm4py
 
 def main():
-	reward_file = os.path.join("..", "data", "output", "new_tests", "BPI_2012_log_eng_preprocessed_filtered_old.csv")
-	policy_file = os.path.join("..", "data", "output", "new_tests", "BPI_2012_log_eng_preprocessed_filtered_old.csv")
-	time_delta_file = os.path.join("..", "data", "BPI2013", "BPI_2012_test_trace_time_delta.csv")
-	with open(time_delta_file) as f:
-		time_deltas = [float(x) for x in f]
-	random_policy = True
+	reward_file = os.path.join("..", "..", "cluster_data", "output_mdps", "BPI2012_log_eng_clusters100_squashed_testing_20_preprocessed.csv")
+	policy_file = os.path.join("..", "..", "cluster_data", "output_policies", "BPI2012_log_eng_clusters100_squashed_training_80_policy_discount.csv")
+	#time_delta_file = os.path.join("..", "data", "BPI2013", "BPI_2012_test_trace_time_delta.csv")
+	#with open(time_delta_file) as f:
+	#	time_deltas = [float(x) for x in f]
+	random_policy = False
 
 	# first and last state definition
 	first_state_list = ['<>']     #  first state with new_SB simple model
@@ -39,7 +39,7 @@ def main():
 	last = 0.0
 	for i in range(1000):
 		#timeline.put_nowait((i*22138, ("<START>", i*22138)))
-		value = np.random.choice(time_deltas)
+		value = np.random.randint(0, 200)
 		timeline.put_nowait((last, ("<START>", last, i)))
 		runs[i] = list()
 		runs[i].append(("<START>", last))

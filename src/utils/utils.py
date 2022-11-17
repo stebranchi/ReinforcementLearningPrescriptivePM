@@ -1,11 +1,14 @@
 import os
 import numpy as np
 import pm4py
+import random
 import datetime
 from pm4py.objects.log.obj import EventLog
 from pm4py.objects.log.exporter.xes import exporter as xes_exporter
 from pm4py.algo.filtering.log.attributes import attributes_filter
 from pm4py.objects.log.obj import Event
+from pm4py.algo.discovery.dfg import algorithm as dfg_discovery
+
 
 def getEventResourceName(event):
 	if event["concept:name"] == 'START' or event["concept:name"] == 'END':
@@ -168,9 +171,8 @@ def scale_reward():
 	output.close()
 
 
-def addDurationReward(path):
+def addDuration(path):
 	log = pm4py.read_xes(path)
-	output_path = path.replace(".xes", "_rewards_and_durations.xes")
 	begin_event = Event()
 	begin_event["concept:name"] = ""
 
@@ -195,6 +197,7 @@ def addDurationReward(path):
 				if event["concept:name"] == begin_event["concept:name"] and event["lifecycle:transition"] == "COMPLETE":
 					#duration = datetime.datetime.strptime(str(event["time:timestamp"]), "%Y-%m-%dT%H:%M:%S.%f%z") - datetime.datetime.strptime(str(begin_event["time:timestamp"]), "%Y-%m-%dT%H:%M:%S.%f%z")
 					duration = event["time:timestamp"] - begin_event["time:timestamp"]
+					event["concept:name"] = "TO_REMOVE"
 					# controllare due giorni diversi invece che durata
 					#if datetime.datetime.strptime(str(event["time:timestamp"]), "%Y-%m-%dT%H:%M:%S.%f%z").day is not datetime.datetime.strptime(str(begin_event["time:timestamp"]), "%Y-%m-%dT%H:%M:%S.%f%z").day:
 					if event["time:timestamp"].day is not begin_event["time:timestamp"].day:
@@ -213,20 +216,83 @@ def addDurationReward(path):
 	tracefilter_log_pos_2 = attributes_filter.apply_events(tracefilter_log, ["TO_REMOVE"],
 														   parameters={attributes_filter.Parameters.ATTRIBUTE_KEY: "concept:name", attributes_filter.Parameters.POSITIVE: False})
 
+	return tracefilter_log_pos_2, path
+
+def addReward(tracefilter_log_pos_2, path):
+	output_path = path.replace(".xes", "_rewards_durations.xes")
 	for trace in tracefilter_log_pos_2:
+		objective_event = False
 		if "AMOUNT_REQ" in trace.attributes.keys():
 			amount = int(trace.attributes["AMOUNT_REQ"])
 		else:
 			amount = 0
 		for event in trace:
+			event["amount"] = amount
+			if 'duration' not in event.keys() and event["concept:name"] not in ["START", "END"]:
+				event['duration'] = 700
 			reward = 0
 			if 'duration' in event.keys():
 				reward -= 0.005 * event['duration']
-			if event["concept:name"] == "A_ACCEPTED":
+			if event["concept:name"] == "O_ACCEPTED":
+				objective_event = True
+			if event["concept:name"] == "END" and objective_event:
 				reward += 0.15 * amount
 			event["kpi:reward"] = reward
 
 	xes_exporter.apply(tracefilter_log_pos_2, output_path)
+
+
+def addRewardCumulative(tracefilter_log_pos_2, path):
+	output_path = path.replace(".xes", "_rewards_cumulative_durations.xes")
+	for trace in tracefilter_log_pos_2:
+		objective_event = False
+		cumulative_reward = 0
+		if "AMOUNT_REQ" in trace.attributes.keys():
+			amount = int(trace.attributes["AMOUNT_REQ"])
+		else:
+			amount = 0
+		for event in trace:
+			event["amount"] = amount
+			if 'duration' not in event.keys():
+				event['duration'] = 700
+			reward = 0
+			if 'duration' in event.keys() and event["concept:name"] not in ["START", "END"]:
+				reward -= 0.005 * event['duration']
+			if event["concept:name"] == "O_ACCEPTED":
+				objective_event = True
+			if event["concept:name"] == "END" and objective_event:
+				reward += 0.15 * amount
+			cumulative_reward += reward
+			event["kpi:reward"] = reward
+			event["kpi:cumulative_reward"] = cumulative_reward
+
+	xes_exporter.apply(tracefilter_log_pos_2, output_path)
+
+
+def addAmountToEachTrace(original_log_path, log_to_update_path):
+	original_log = pm4py.read_xes(original_log_path)
+	log_to_update = pm4py.read_xes(log_to_update_path)
+
+	for t_update in log_to_update:
+		for t_original in original_log:
+			if t_original.attributes["concept:name"] == t_update.attributes["concept:name"]:
+				t_update.attributes["amount"] = t_original.attributes["AMOUNT_REQ"]
+				for event_update in t_update:
+					event_update["amount"] = t_original.attributes["AMOUNT_REQ"]
+
+	xes_exporter.apply(log_to_update, log_to_update_path.replace(".xes", "_amount.xes"))
+
+
+def addStateAttribute(path):
+	log = pm4py.read_xes(path)
+	for trace in log:
+		for event in trace:
+			if "START" in event["concept:name"]:
+				event["stato"] = event["concept:name"]
+			else:
+				event["stato"] = event["concept:name"] + " | " + event["cluster:prefix"]
+	pm4py.write_xes(log, path)
+
 
 if __name__ == '__main__':
 	#remove_q()
@@ -234,7 +300,11 @@ if __name__ == '__main__':
 	#zero_q()
 	#parsemdp()
 	#find_event()
-	splitLog("../../cluster_data/output_logs/BPI2012_log_eng_clusters_squashed.xes")
+	splitLog("../../data_old/logs/BPI_2012/BPI_2012_log_eng_rewards_cumulative_durations_ordered_V2.xes")
 	#count()
 	#scale_reward()
-	#addDurationReward("../data/BPI2013/BPI_2012_log_eng.xes")
+	#log, path = addDuration("../../data/logs/BPI_2012/BPI_2012_log_eng_testing_20.xes")
+	#addReward(log, outpath)
+	#addRewardCumulative(log, path)
+	#addAmountToEachTrace("../../data/logs/BPI_2012/BPI_2012_log_eng.xes", "../../cluster_data/output_logs/BPI2012_log_eng_clusters100_squashed_testing_20.xes")
+	#addStateAttribute("../../cluster_data_old/output_logs/BPI2012_log_eng_positional_cumulative_squashed_testing_20.xes")
