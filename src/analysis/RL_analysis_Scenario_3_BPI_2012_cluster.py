@@ -4,97 +4,106 @@ import numpy as np
 from datetime import datetime
 
 from pm4py.objects.log.importer.xes import importer as xes_importer
-from pm4py.objects.log.exporter.xes import exporter as xes_exporter
 
 # TODO:Cambiare i vari attributi, non ci serve più la durata visto che ho già il reward, gli attributi non servono più ma solo il cluster
 
+q_column_index = 6
 case_id_label = 'concept:name'
 event_label = 'concept:name'
 lifecycle_label = 'lifecycle:transition'
-timestamp_label = 'time:timestamp'
-attributes_label_list = ['amount', 'n_calls_after_offer', 'n_calls_missing_doc', 'number_of_offers', 'number_of_sent_back', 'W_Fix_incoplete_submission']
+attributes_label_list = ['cluster:prefix']
 amount_label = 'amount'
-duration_label = 'duration'
-cost_factor = 0.005
+reward_label = 'kpi:reward'
 rounding = 1
+#TODO: giusto controllare anche il cluster per la decisione di best action ma non per controllare le tracce
 
 def main():
     # import log
     # log_path = os.path.join("..", "input_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v4", "log", "BPI_2012_log_eng_training_80_mid_preprocessed_number_incr_wfix.xes")
-    log_path = os.path.join("..", "input_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v4", "log", "BPI_2012_log_eng_testing_20_mid_preprocessed_number_incr_wfix.xes")
+    log_path = os.path.join("..", "..", "cluster_data", "output_logs",
+                            "BPI2012_ordered_positional_cumulative_squashed_testing_20_preprocessed.xes")
     log = xes_importer.apply(log_path)
 
     all_traces_analysis = False  # global analysis of all traces
     only_events = False  # means no resources are used in definition of states
-
+    only_events_in_case = True
 
     # import policy csv, must have these columns (s,a,s',p,r,q)
-    policy_file = os.path.join("..", "output_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v4", "Trimmed BPI_2012 mdp training 80 n_wfix scaled3 policy.csv")
+    policy_file = os.path.join("..", "..", "cluster_data", "output_policies",
+                               "BPI2012_50_ordered_linear_scale_factor.csv")
 
     MDP_policy = pd.read_csv(policy_file)
     MDP_policy_val = MDP_policy.values  # converts it into array
-    policy_rules_dict = get_policy_rules(MDP_policy_val, only_events)  # policy rules give a list of possible next state for each current state
+    policy_rules_dict = get_policy_rules(MDP_policy_val, only_events) # policy rules give a list of possible next state for each current state
+    policy_rules_dict_only_events = get_policy_rules(MDP_policy_val, True)
 
     events_and_attributes = [('START', [])] # <START>
     # events_and_attributes = [('O_CREATED', ['medium', 0, 0, 0, 0])] # <O_CREATED - medium - 0 - 0 - 0>
     initial_states = [event_attributes_to_state(event, attributes, only_events) for event, attributes in events_and_attributes]
-    analysis_sc3(log, policy_rules_dict, initial_states, only_events, all_traces_analysis)
+    analysis_sc3(log, policy_rules_dict, policy_rules_dict_only_events, initial_states, only_events, all_traces_analysis, only_events_in_case)
 
 
-# TODO:aggiungere la pipe tra evento e cluster
-def event_attributes_to_state(event, attribute_list, only_events):
-    event = event
+def event_attributes_to_state_old(event, attribute_list, only_events):
     if event in ('START', 'END') or attribute_list == [] or only_events:
         state = '<' + event + '>'
     else:
         # BPI-2012
-        state_list = [event] + [str(attribute) for attribute in attribute_list]
-        state = '<' + ' - '.join(state_list) + '>'
+        state_list = [str(attribute) for attribute in attribute_list]
+        state = '<' + event + ' | ' + ' - '.join(state_list) + '>'
     return state
 
+def event_attributes_to_state(event, attribute_list, only_events):
+    if event == 'START' or attribute_list == [] or only_events:
+        state = '<' + event + '>'
+    else:
+        # BPI-2012
+        state_list = [str(attribute) for attribute in attribute_list]
+        state = '<' + event + ' | ' + ' - '.join(state_list) + '>'
+    return state
 
 
 def state_manipulation(state, only_events):
     if not only_events:
         modified_state = '<'+(state.replace('<','').replace('>',''))+'>'
     else:
-        modified_state = '<'+(state.split(' - ')[0].replace('<','').replace('>',''))+'>'  # sepsis
+        modified_state = '<'+(state.split(' | ')[0].replace('<','').replace('>',''))+'>'  # sepsis
 
     return modified_state
 
 
 def get_policy_rules(MDPval, only_events):
-    states_max_value = {state_manipulation(row[0], only_events): row[5] for row in MDPval}
+    states_max_value = {state_manipulation(row[0], only_events): row[q_column_index] for row in MDPval}
     policy_rules = {state_manipulation(row[0], only_events): [] for row in MDPval}
     for rowid, row in enumerate(MDPval):
         state = state_manipulation(MDPval[rowid, 0], only_events)
-        value = MDPval[rowid, 5]
+        value = MDPval[rowid, q_column_index]
         states_max_value[state] = max(states_max_value[state], value)
     for rowid, row in enumerate(MDPval):
         state = state_manipulation(MDPval[rowid, 0], only_events)
         next_state = state_manipulation(MDPval[rowid, 2], only_events)
-        value = MDPval[rowid, 5]
+        value = MDPval[rowid, q_column_index]
         max_value = states_max_value[state]
         if value >= max_value and next_state not in policy_rules[state]:
-            policy_rules[state] += [next_state]
+            policy_rules[state] += [next_state.split(' | ')[0].replace("<","").replace(">","")]
     return policy_rules
 
 
-def analysis_sc3(log, policy_rules, initial_states, only_events, all_traces_analysis):
+def analysis_sc3(log, policy_rules, policy_rules_only_events, initial_states, only_events, all_traces_analysis, only_events_in_case):
     relevant_case_number = 0
     relevant_case_total_reward = 0
-    relevant_case_min_reward = 0
-    relevant_case_max_reward = 0
+    relevant_case_min_reward = 1000000
+    relevant_case_max_reward = -10000000
     complementary_case_number = 0
     complementary_case_total_reward = 0
-    complementary_case_min_reward = 0
-    complementary_case_max_reward = 0
+    complementary_case_min_reward = 1000000
+    complementary_case_max_reward = -10000000
     relevant_case_osent = 0
     relevant_case_oaccepted = 0
     complementary_case_osent = 0
     complementary_case_oaccepted = 0
     relevant_case_id_list = []
     n_errors = 0
+    error_states_set = set()
     # PRIZES: low: +650, medium: +1900, high: +5900
     prize_dict = {'no': 0, 'low': 650, 'medium': 1900, 'high': 5900}
     for case_index, case in enumerate(log):  # all case in log
@@ -110,20 +119,21 @@ def analysis_sc3(log, policy_rules, initial_states, only_events, all_traces_anal
         for event_index, event in enumerate(case):  # all event in case
             # look only to complete events
             # if event[lifecycle_label].lower() == 'complete':
-            # TODO: change to use reward
             try:
                 attributes_list = [event[label] for label in attributes_label_list]
-                amount = event[amount_label]
             except Exception as e:
                 attributes_list = []
-                amount = 'no'
-            try:
-                current_duration = event[duration_label]
-            except Exception as e:
-                current_duration = 0
             current_state = event_attributes_to_state(event[event_label], attributes_list, only_events)
             # first of all look if we are at the end state
-            if current_state == '<END>':
+            if "AZIONE" in current_state:
+                current_action = current_state.split('AZIONE')[0]
+                current_state = current_state.split('AZIONE')[-1]
+                current_action = current_action.replace('<','')
+                current_state = '<' + current_state
+            else:
+                current_action = current_state.split(' | ')[0].replace("<","").replace(">","")
+            if "END" in current_state:
+                reward += event[reward_label]
                 break
             # second of all, look if the first event of a good path happens
             # look if the first event of a good path happens
@@ -134,7 +144,7 @@ def analysis_sc3(log, policy_rules, initial_states, only_events, all_traces_anal
                     good_path = True
             # third of all, look if it follows the path at the next steps
             else:
-                if current_state in good_next_states or all_traces_analysis:
+                if current_action in good_next_actions or all_traces_analysis:
                     # i += 1
                     good_path = True  # useless, but for clarity
                 else:
@@ -144,23 +154,25 @@ def analysis_sc3(log, policy_rules, initial_states, only_events, all_traces_anal
                 n_osent = 1
             else:
                 n_osent = max(n_osent, 0)
-            # TODO:remove prize category and use directly the amount
             if 'O_ACCEPTED' in event[event_label]:
-                prize = prize_dict[amount]
                 n_oaccepted = 1
             else:
-                prize = 0
                 n_oaccepted = max(n_oaccepted, 0)
-            reward += - current_duration * cost_factor + prize
             # compute next good states from the policy rules
             # TODO: if returns a lot of errors we need to change the way we calculate clusters
             try:
-                good_next_states = policy_rules[current_state]
+                if only_events_in_case:
+                    if current_state in policy_rules.keys():
+                        good_next_actions = policy_rules[current_state]
+                    else:
+                        good_next_actions = policy_rules_only_events['<' + current_state.split(" | ")[0].replace('<','').replace('>','') + '>']
+                else:
+                    good_next_actions = policy_rules[current_state]
             except Exception as e: # in the case there is not the state in the MDP model
                 n_errors += 1
-                print ("Error number: " + str(n_errors))
-                good_next_states = []
-
+                error_states_set.add(current_state)
+                print("Error number: " + str(n_errors))
+                good_next_actions = []
 
         if good_start:
             if good_path:
@@ -256,7 +268,7 @@ def analysis_sc3(log, policy_rules, initial_states, only_events, all_traces_anal
     compl_list += [complementary_case_osent]
     compl_list += [complementary_case_oaccepted]
     print(','.join([str(round(x,rounding)) for x in compl_list]))
-
+    #print(error_states_set)
     # output_file = os.path.join("..", "output_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v1", 'performance', 'Scenario_3_BPI_2012_good_traces.csv')
     # with open(output_file, 'w') as f:
     #     for item in relevant_case_id_list:

@@ -5,15 +5,16 @@ from datetime import datetime
 from csv import DictWriter
 
 from pm4py.objects.log.importer.xes import importer as xes_importer
-from pm4py.objects.log.exporter.xes import exporter as xes_exporter
 
+q_column_index = 6
 trace_id_label = 'concept:name'
 case_id_label = 'concept:name'
 event_label = 'concept:name'
 lifecycle_label = 'lifecycle:transition'
 timestamp_label = 'time:timestamp'
-attributes_label_list = ['amount', 'n_calls_after_offer', 'n_calls_missing_doc', 'number_of_offers', 'number_of_sent_back']
+attributes_label_list = ['cluster:prefix']
 amount_label = 'amount'
+reward_label = 'kpi:reward'
 duration_label = 'duration'
 cost_factor = 0.005
 check_single_trace = True  # analysis of one trace_id
@@ -21,22 +22,22 @@ check_single_trace = True  # analysis of one trace_id
 def main():
     # import log
     # log_path = os.path.join("..", "input_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", "log", "BPI_2012_log_eng_training_60_mid_preprocessed_var90.xes")
-    log_path = os.path.join("..", "input_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", "log", "BPI_2012_log_eng_testing_40_mid_preprocessed_var90.xes")
+    log_path =os.path.join("..", "..", "cluster_data", "output_logs", "BPI2012_log_eng_positional_cumulative_squashed_testing_20_mid_preprocessed.xes")
     log = xes_importer.apply(log_path)
     # TODO: rephrase the comment below
     full_prefix = True  # False: consider only final state of the prefix to take optimal continuations
     only_events = False  # means no resources are used in definition of states
 
     # import policy csv, must have these columns (s,a,s',p,r,q)
-    policy_file = os.path.join("..", "output_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", "Trimmed BPI_2012 mdp training 60 r005 var90 scaled3 policy.csv")
+    policy_file = os.path.join("..", "..", "cluster_data", "output_policies", "BPI2012_log_eng_positional_end_reward_95.csv")
 
     MDP_policy = pd.read_csv(policy_file)
     MDP_policy_val = MDP_policy.values  # converts it into array
     policy_rules_dict = get_policy_rules(MDP_policy_val, only_events)  # policy rules give a list of possible next state for each current state
 
     # output file path
-    output_file_name = "single_trace_testing_40_scaled3.csv"
-    output_file_path = os.path.join("..", "output_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", "performance", output_file_name)
+    output_file_name = "single_trace_testing_20_positional_cumulative.csv"
+    output_file_path = os.path.join("..", "..", "cluster_data", "output_performance", output_file_name)
 
 
     once = True  # variable used to truncate and write header of csv
@@ -89,7 +90,7 @@ def main():
                 if 'O_ACCEPTED' in case[i][event_label]:
                     amount = case[i][amount_label]
                     actual_accepted = 1
-                    actual_prize = prize_dict[amount]
+                    actual_prize = int(amount)
 
 
             # analysis_tr_sc3 get the avg duration and reward for every trace which contains initial state and follows optimal path
@@ -99,13 +100,13 @@ def main():
                 if prefix not in trace_analysis_dict.keys():
                     trace_analysis_dict[prefix] = analysis_tr_sc3(log, policy_rules_dict, initial_state, only_events, full_prefix, prefix)
                 opt_trace_number, opt_trace_avg_time, opt_trace_accepted_rate, opt_trace_avg_prize, \
-                compl_trace_number, compl_trace_avg_time, compl_trace_acceptance_rate, compl_trace_avg_prize = trace_analysis_dict[initial_state]
+                    compl_trace_number, compl_trace_avg_time, compl_trace_acceptance_rate, compl_trace_avg_prize = trace_analysis_dict[prefix]
 
             else:
                 if initial_state not in trace_analysis_dict.keys():
                     trace_analysis_dict[initial_state] = analysis_tr_sc3(log, policy_rules_dict, initial_state, only_events, full_prefix, prefix)
                 opt_trace_number, opt_trace_avg_time, opt_trace_accepted_rate, opt_trace_avg_prize, \
-                compl_trace_number, compl_trace_avg_time, compl_trace_acceptance_rate, compl_trace_avg_prize = trace_analysis_dict[initial_state]
+                    compl_trace_number, compl_trace_avg_time, compl_trace_acceptance_rate, compl_trace_avg_prize = trace_analysis_dict[initial_state]
 
             # print output as a test, it will be replaced with insert row in csv
             # print("trace_id:", trace_id, ", trace length:", trace_len, ", prefix length:", length + 1, ", initial_state:" , initial_state[0],
@@ -174,12 +175,12 @@ def main():
 
 def event_attributes_to_state(event, attribute_list, only_events):
     event = event
-    if event in ('START', 'END') or attribute_list == [] or only_events:
+    if event == 'START' or attribute_list == [] or only_events:
         state = '<' + event + '>'
     else:
         # BPI-2012
-        state_list = [event] + [str(attribute) for attribute in attribute_list]
-        state = '<' + ' - '.join(state_list) + '>'
+        state_list = [str(attribute) for attribute in attribute_list]
+        state = '<' + event + ' | ' + ' - '.join(state_list) + '>'
     return state
 
 
@@ -193,16 +194,16 @@ def state_manipulation(state, only_events):
 
 
 def get_policy_rules(MDPval, only_events):
-    states_max_value = {state_manipulation(row[0], only_events): row[5] for row in MDPval}
+    states_max_value = {state_manipulation(row[0], only_events): row[q_column_index] for row in MDPval}
     policy_rules = {state_manipulation(row[0], only_events): [] for row in MDPval}
     for rowid, row in enumerate(MDPval):
         state = state_manipulation(MDPval[rowid, 0], only_events)
-        value = MDPval[rowid, 5]
+        value = MDPval[rowid, q_column_index]
         states_max_value[state] = max(states_max_value[state], value)
     for rowid, row in enumerate(MDPval):
         state = state_manipulation(MDPval[rowid, 0], only_events)
         next_state = state_manipulation(MDPval[rowid, 2], only_events)
-        value = MDPval[rowid, 5]
+        value = MDPval[rowid, q_column_index]
         max_value = states_max_value[state]
         if value >= max_value and next_state not in policy_rules[state]:
             policy_rules[state] += [next_state]
@@ -220,7 +221,6 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
     complementary_case_total_prize = 0
     relevant_case_id_list = []
     relevant_case_reward = []
-    prize_dict = {'no': 0, 'low': 650, 'medium': 1900, 'high': 5900}
     for case_index, case in enumerate(log):  # all case in log
         case_solved = False
         good_start = False
@@ -245,7 +245,7 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
                 current_state = event_attributes_to_state(event[event_label], attributes_list, only_events)
                 current_prefix += current_state
                 # first of all look if we are at the end state
-                if current_state == '<END>':
+                if 'END' in current_state:
                     break
                 # second of all, look if the first event of a good path happens
                 # if the first event already happened then skip this step
@@ -266,8 +266,8 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
                         good_path = False
                 # compute rewards
                 if 'O_ACCEPTED' in event[event_label]:
-                    amount = event[amount_label]
-                    prize = prize_dict[amount]
+                    reward = event[reward_label]
+                    prize = reward
                     accepted = 1
                 duration += current_duration
                 # compute next good states from the policy rules
@@ -324,8 +324,8 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
     #       ', avg prize:', complementary_case_avg_prize)
 
     if check_single_trace:
-        output_name = 'relevant_trace_id_198173_scaled3.csv'
-        output_file = os.path.join("..", "output_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", 'performance', output_name)
+        output_name = 'relevant_trace_id_198173_amount.csv'
+        output_file = os.path.join("..", "..", "cluster_data", "output_performance", output_name)
         with open(output_file, 'w') as f:
             write_list = [str(relevant_case_id_list[i])+','+str(relevant_case_reward[i])
                           for i in range(len(relevant_case_id_list))]

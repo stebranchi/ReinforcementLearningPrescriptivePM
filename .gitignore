@@ -129,6 +129,4 @@ dmypy.json
 .pyre/
 
 # Folder
-data_old/
-cluster_data_old/
-cluster_data/
+*data*/
