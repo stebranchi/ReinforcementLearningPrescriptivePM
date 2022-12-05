@@ -1,5 +1,6 @@
 import os
 import math
+import numpy
 
 import pandas as pd
 import pm4py
@@ -11,10 +12,10 @@ from sklearn.preprocessing import MinMaxScaler
 import copy
 import datetime
 
-def main(path):
-	OUTPUT_PATH = path.replace("logs","mdps").replace('.xes', '_scaled.csv')
+def main(path, tracefilter_log_pos):
+	OUTPUT_PATH = path.replace("logs","mdps").replace('.xes', '_not_scaled.csv')
 	cols_headers = ["s","a","s'","p_r","reward","number_occurrences"]
-	tracefilter_log_pos = pm4py.read_xes(path)
+	#tracefilter_log_pos = pm4py.read_xes(path)
 	reward_dict = dict()
 
 	#WORKING VERSION
@@ -102,6 +103,14 @@ def main(path):
 				max_count[(key, k1)] = t["c"]
 
 	max_c = max([v for k,v in max_count.items()])
+	with open(OUTPUT_PATH.replace("output_mdps", "logs_stats"), 'w') as out_stats:
+		values = numpy.array([v for k,v in max_count.items()]).astype(float)
+		out_stats.write("Min: " + str(min(values)) + "\n")
+		out_stats.write("Max: " + str(max(values)) + "\n")
+		out_stats.write("Average: " + str(numpy.mean(values)) + "\n")
+		out_stats.write("Median: " + str(numpy.median(values)) + "\n")
+		out_stats.write("Q1: " + str(numpy.quantile(values, 0.25)) + "\n")
+		out_stats.write("Q3: " + str(numpy.quantile(values, 0.75)) + "\n")
 	"""csv_to_rem = dict()
 	for (s1, s2), v in max_count.items():
 		if "START" not in s1 and "END" not in s2:
@@ -132,7 +141,7 @@ def main(path):
 	#out = open(OUTPUT_PATH, 'w')
 	#out.write("s,a,s',p_r,reward,number_occurrences\n<>,START,<START>,1.0,0.0," + str(max_c) + "\n")
 	full["reward"] = full["reward"].map(lambda x: 0 if x == 0 else mmrew.transform([[x]])[0][0])
-	full["number_occurrences"] = full["number_occurrences"].map(lambda x: 0 if x == 0 else mmocc.transform([[x]])[0][0])
+	# full["number_occurrences"] = full["number_occurrences"].map(lambda x: 0 if x == 0 else mmocc.transform([[x]])[0][0])
 	full.to_csv(OUTPUT_PATH, index=False)
 	"""for row in starts.transpose():
 		out.write(','.join([str(x) for x in starts.transpose()[row]]) + '\n')
@@ -198,16 +207,16 @@ def preprocessBPI(path):
 
 	xes_exporter.apply(tracefilter_log_pos, output_path)
 
-	for trace in tracefilter_log_pos:
+	"""for trace in tracefilter_log_pos:
 		for event in trace:
 			if "AZIONE" in event["concept:name"]:
 				event["concept:name"] = event["concept:name"].split("AZIONE")[-1]
 			if "duration" not in event.keys():
 				event["duration"] = 0
 
-	xes_exporter.apply(tracefilter_log_pos, mid_output_path)
+	xes_exporter.apply(tracefilter_log_pos, mid_output_path)"""
 	print("end preprocessing")
-	return output_path
+	return output_path, tracefilter_log_pos
 
 def checkMDPS(path1, path2):
 	with open(path1, 'r') as csv1:
@@ -221,9 +230,10 @@ def checkMDPS(path1, path2):
 
 
 if __name__ == "__main__":
-	output_path = preprocessBPI(
-		"../../cluster_data/output_logs/BPI2012_ordered_positional_cumulative_squashed_V2_training_80.xes")
+	path = "../../cluster_data/node2vec/output_logs/BPI_2012_log_eng_ordered_training_80_edgeavgmax8_35.xes"
+	output_path, output_log = preprocessBPI(path)
 	#output_path = "../../cluster_data/output_logs/BPI2012_new_arch_positional_cumulative_squashed_training_80_preprocessed.xes"
-	main(output_path)
+	if "training" in path:
+		main(output_path, output_log)
 	#checkMDPS("../../cluster_data/output_mdps/BPI2012_new_arch_positional_cumulative_squashed_testing_20_preprocessed_scaled.csv",
 	#		  "../../cluster_data/output_mdps/BPI2012_new_arch_positional_cumulative_squashed_training_80_preprocessed_scaled.csv")

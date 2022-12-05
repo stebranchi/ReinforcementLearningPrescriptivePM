@@ -14,11 +14,11 @@ dead_end_state = 'missing'
 end_state = 'end'
 
 only_events = False
-max_length_path = 22
+max_length_path = 18
 
 def main():
 	# define input output file
-	csv_q_value = os.path.join("..", "..", "cluster_data", "output_policies", "BPI2012_new_arch_positional_cumulative_linear_scale_factor.csv")
+	csv_q_value = os.path.join("..", "..", "cluster_data", "output_policies", "BPI2012_50_ordered_linear_scale_factor_bug_fixed.csv")
 	csv_policy = csv_q_value.replace('.csv', '_policy_only_events.csv' if only_events else '_policy.csv')
 	csv_output = csv_policy.replace(".csv", '_paths.csv')
 	# import MDP df

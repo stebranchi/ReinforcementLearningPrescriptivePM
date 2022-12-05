@@ -130,7 +130,7 @@ def getPoints(txt_path, model):
 
 
 if __name__ == "__main__":
-    log = xes_importer.apply("../../data_old/Sepsis Cases - Event Log_training.xes")
-    score = run_all_mp_checkers_traces(log[0], '../../data_old/Sepsis_training_10_90_all.decl',
-                                       '../../data_old/Sepsis_training_10_90_all.txt')
+    log = xes_importer.apply("../../data/Sepsis Cases - Event Log_training.xes")
+    score = run_all_mp_checkers_traces(log[0], '../../data/Sepsis_training_10_90_all.decl',
+                                       '../../data/Sepsis_training_10_90_all.txt')
     print(score)

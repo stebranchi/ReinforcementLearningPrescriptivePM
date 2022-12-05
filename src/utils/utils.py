@@ -263,8 +263,9 @@ def addRewardCumulative(tracefilter_log_pos_2, path):
 			if event["concept:name"] == "END" and objective_event:
 				reward += 0.15 * amount
 			cumulative_reward += reward
-			event["kpi:reward"] = reward
-			event["kpi:cumulative_reward"] = cumulative_reward
+			#event["kpi:reward"] = reward
+			#event["kpi:cumulative_reward"] = cumulative_reward
+			event["kpi:reward"] = cumulative_reward
 
 	xes_exporter.apply(tracefilter_log_pos_2, output_path)
 
@@ -300,10 +301,10 @@ if __name__ == '__main__':
 	#zero_q()
 	#parsemdp()
 	#find_event()
-	splitLog("../../data_old/logs/BPI_2012/BPI_2012_log_eng_rewards_cumulative_durations_ordered_V2.xes")
+	splitLog("../../data/logs/BPI_2012/BPI_2012_log_eng_ordered_nomicro_rewards_cumulative_durations.xes")
 	#count()
 	#scale_reward()
-	#log, path = addDuration("../../data/logs/BPI_2012/BPI_2012_log_eng_testing_20.xes")
+	#log, path = addDuration("../../data/logs/BPI_2012/BPI_2012_log_eng_ordered_nomicro.xes")
 	#addReward(log, outpath)
 	#addRewardCumulative(log, path)
 	#addAmountToEachTrace("../../data/logs/BPI_2012/BPI_2012_log_eng.xes", "../../cluster_data/output_logs/BPI2012_log_eng_clusters100_squashed_testing_20.xes")

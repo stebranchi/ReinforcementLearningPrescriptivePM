@@ -1,0 +1,8 @@
+Log
+utils/utils.py - addDuration -> addRewardCumulative = log ordered with duration and reward
+utils/utils.py - splitLog = log splitted in training and testing
+clusterer/Clusterer_splitted.py = creates cluster with training and applies to train and test set
+mdp_creator/MDPCreator_BPI_cluster.py = creates a processed log where environment events are concatenated to last events and for training creates the mdp
+training/Run_RL_train_MC_v2.3_end_reward.py = gives the learned optimal policy
+analysis/RL_analysis_Scenario_3_BPI_2012_cluster.py = check how are the traces created following the policy
+analysis/RL_analysis_single_traces_Scenario_3_BPI_2012_cluster.py = compare actual and optimal policy

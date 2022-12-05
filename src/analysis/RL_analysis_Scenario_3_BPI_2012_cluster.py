@@ -20,17 +20,17 @@ rounding = 1
 def main():
     # import log
     # log_path = os.path.join("..", "input_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v4", "log", "BPI_2012_log_eng_training_80_mid_preprocessed_number_incr_wfix.xes")
-    log_path = os.path.join("..", "..", "cluster_data", "output_logs",
-                            "BPI2012_ordered_positional_cumulative_squashed_testing_20_preprocessed.xes")
+    log_path = os.path.join("..", "..", "cluster_data", "normal_encoding", "output_logs",
+                            "BPI2012_ordered_100_test_fixed_testing_20_preprocessed.xes")
     log = xes_importer.apply(log_path)
 
     all_traces_analysis = False  # global analysis of all traces
     only_events = False  # means no resources are used in definition of states
-    only_events_in_case = True
+    only_events_in_case = False
 
     # import policy csv, must have these columns (s,a,s',p,r,q)
-    policy_file = os.path.join("..", "..", "cluster_data", "output_policies",
-                               "BPI2012_50_ordered_linear_scale_factor.csv")
+    policy_file = os.path.join("..", "..", "cluster_data", "normal_encoding", "output_policies",
+                               "BPI2012_100_notscaled_exp_test3_2_5mil.csv")
 
     MDP_policy = pd.read_csv(policy_file)
     MDP_policy_val = MDP_policy.values  # converts it into array

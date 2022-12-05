@@ -79,7 +79,7 @@ def removeComponents(log):
     print(len(filtered_log) / len(log))
 
 
-def orderEventsOnTimestamps(log_path):
+def orderEventsOnTimestamps(log_path, remove_micro=False):
     log = pm4py.read_xes(log_path)
     output_log = EventLog()
     for name, value in log.attributes.items():
@@ -90,7 +90,8 @@ def orderEventsOnTimestamps(log_path):
         events_by_timestamp = dict()
         for event in trace[1:-1]:
             ev = copy.deepcopy(event)
-            #ev["time:timestamp"] = ev["time:timestamp"].replace(microsecond=0)
+            if remove_micro:
+                ev["time:timestamp"] = ev["time:timestamp"].replace(microsecond=0)
             timestamp = ev["time:timestamp"]
             # timestamp = event["time:timestamp"].strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]
             trace_timestamps_set.add(timestamp)
@@ -108,15 +109,20 @@ def orderEventsOnTimestamps(log_path):
         for name, value in trace.attributes.items():
             new_trace.attributes[name] = value
         new_trace.append(trace[0])
-        #new_trace[0]["time:timestamp"] = new_trace[0]["time:timestamp"].replace(microsecond=0)
+        if remove_micro:
+            new_trace[0]["time:timestamp"] = new_trace[0]["time:timestamp"].replace(microsecond=0)
         for timestamp in sorted(list(trace_timestamps_set)):
             [new_trace.append(x) for x in sorted(events_by_timestamp[timestamp]["env"], key=lambda x: x["concept:name"])]
             [new_trace.append(x) for x in sorted(events_by_timestamp[timestamp]["agent"], key=lambda x: x["concept:name"])]
         new_trace.append(trace[-1])
-        #new_trace[-1]["time:timestamp"] = new_trace[-1]["time:timestamp"].replace(microsecond=0)
+        if remove_micro:
+            new_trace[-1]["time:timestamp"] = new_trace[-1]["time:timestamp"].replace(microsecond=0)
         output_log.append(new_trace)
 
-    pm4py.write_xes(output_log, log_path.replace(".xes", "_ordered_v2.xes"))
+    if remove_micro:
+        pm4py.write_xes(output_log, log_path.replace(".xes", "_ordered_nomicro.xes"))
+    else:
+        pm4py.write_xes(output_log, log_path.replace(".xes", "_ordered_micro.xes"))
 
 
 def extrateSameTimeEvents(log_path, micro=False):
@@ -151,7 +157,7 @@ if __name__ == "__main__":
     #main("../../cluster_data/output_logs/BPI2012_log_eng_positional_cumulative_squashed_training_80.xes")
     #removeComponents(pm4py.read_xes("../../data/logs/BPI_2012/BPI_2012_log_eng_rewards_cumulative_durations.xes"))
     #seqDiscovery(pm4py.read_xes("../../data/logs/BPI_2012/BPI_2012_log_eng_rewards_cumulative_durations.xes"))
-    #orderEventsOnTimestamps("../../data/logs/BPI_2012/BPI_2012_log_eng_rewards_cumulative_durations.xes")
-    same_timestamps_events_set_counter = extrateSameTimeEvents("../../data/logs/BPI_2012/BPI_2012_log_eng_rewards_cumulative_durations.xes")
-    same_timestamps_micro_events_set_counter = extrateSameTimeEvents("../../data/logs/BPI_2012/BPI_2012_log_eng_rewards_cumulative_durations.xes", True)
-    print(set(same_timestamps_events_set_counter).intersection(set(same_timestamps_micro_events_set_counter)))
+    orderEventsOnTimestamps("../../data/logs/BPI_2012/BPI_2012_log_eng.xes", True)
+    #same_timestamps_events_set_counter = extrateSameTimeEvents("../../data/logs/BPI_2012/BPI_2012_log_eng_rewards_cumulative_durations.xes")
+    #same_timestamps_micro_events_set_counter = extrateSameTimeEvents("../../data/logs/BPI_2012/BPI_2012_log_eng_rewards_cumulative_durations.xes", True)
+    #print(set(same_timestamps_events_set_counter).intersection(set(same_timestamps_micro_events_set_counter)))

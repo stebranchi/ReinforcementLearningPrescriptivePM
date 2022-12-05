@@ -17,27 +17,30 @@ amount_label = 'amount'
 reward_label = 'kpi:reward'
 duration_label = 'duration'
 cost_factor = 0.005
-check_single_trace = True  # analysis of one trace_id
+check_single_trace = False  # analysis of one trace_id
+work_folder = "normal_encoding"
 
 def main():
     # import log
     # log_path = os.path.join("..", "input_data", "BPM_Scenarios", "Scenario_3-BPI_2012", "v3", "log", "BPI_2012_log_eng_training_60_mid_preprocessed_var90.xes")
-    log_path =os.path.join("..", "..", "cluster_data", "output_logs", "BPI2012_log_eng_positional_cumulative_squashed_testing_20_mid_preprocessed.xes")
+    log_path =os.path.join("..", "..", "cluster_data", work_folder, "output_logs",
+                           "BPI2012_ordered_100_test_fixed_testing_20_preprocessed.xes")
     log = xes_importer.apply(log_path)
     # TODO: rephrase the comment below
     full_prefix = True  # False: consider only final state of the prefix to take optimal continuations
     only_events = False  # means no resources are used in definition of states
 
     # import policy csv, must have these columns (s,a,s',p,r,q)
-    policy_file = os.path.join("..", "..", "cluster_data", "output_policies", "BPI2012_log_eng_positional_end_reward_95.csv")
+    policy_file_name = "BPI2012_100_notscaled_step_test2.csv"
+    policy_file = os.path.join("..", "..", "cluster_data", work_folder, "output_policies", policy_file_name)
 
     MDP_policy = pd.read_csv(policy_file)
     MDP_policy_val = MDP_policy.values  # converts it into array
     policy_rules_dict = get_policy_rules(MDP_policy_val, only_events)  # policy rules give a list of possible next state for each current state
 
     # output file path
-    output_file_name = "single_trace_testing_20_positional_cumulative.csv"
-    output_file_path = os.path.join("..", "..", "cluster_data", "output_performance", output_file_name)
+    # output_file_name = "BPI2012_50_test_fixed_scale_factor.csv"
+    output_file_path = os.path.join("..", "..", "cluster_data", work_folder, "output_performances", policy_file_name)
 
 
     once = True  # variable used to truncate and write header of csv
@@ -46,7 +49,6 @@ def main():
     trace_analysis_dict = {}
 
     # max_len_all_cases = max([len(case) for case in log])
-    prize_dict = {'no': 0, 'low': 650, 'medium': 1900, 'high': 5900}
     for case_index, case in enumerate(log):
         print(len(log)-case_index)
         # does the prediction at every prefix length
@@ -78,8 +80,8 @@ def main():
             # actual working-time duration is computed from event attribute duration
             actual_duration = 0
             actual_accepted = 0
-            actual_prize = 0
             number_events_duration = 0
+            actual_reward = case[-1][reward_label]
             for i in range(trace_len):
                 try:
                     actual_duration += case[i][duration_label]
@@ -88,9 +90,7 @@ def main():
                 except Exception as e:
                     actual_duration += 0
                 if 'O_ACCEPTED' in case[i][event_label]:
-                    amount = case[i][amount_label]
                     actual_accepted = 1
-                    actual_prize = int(amount)
 
 
             # analysis_tr_sc3 get the avg duration and reward for every trace which contains initial state and follows optimal path
@@ -127,14 +127,14 @@ def main():
             # line_to_print['actual_prize'] = actual_prize
 
             try:
-                opt_avg_reward = - opt_trace_avg_time * cost_factor + opt_trace_avg_prize
+                opt_avg_reward = opt_trace_avg_prize
             except Exception as e:
                 opt_avg_reward = None
             try:
-                compl_avg_reward = - compl_trace_avg_time * cost_factor + compl_trace_avg_prize
+                compl_avg_reward = compl_trace_avg_prize
             except Exception as e:
                 compl_avg_reward = None
-            actual_reward = - actual_duration * cost_factor + actual_prize
+
 
             # except Exception as e:
             #     print('opt_trace_avg_time', opt_trace_avg_time)
@@ -206,7 +206,7 @@ def get_policy_rules(MDPval, only_events):
         value = MDPval[rowid, q_column_index]
         max_value = states_max_value[state]
         if value >= max_value and next_state not in policy_rules[state]:
-            policy_rules[state] += [next_state]
+            policy_rules[state] += [next_state.split(' | ')[0].replace("<","").replace(">","")]
     return policy_rules
 
 
@@ -226,7 +226,7 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
         good_start = False
         good_path = False
         duration = 0
-        prize = 0
+        reward = 0
         accepted = 0
         current_prefix = ''
         case_id = case.attributes[case_id_label]
@@ -243,9 +243,17 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
                     current_duration = 0
 
                 current_state = event_attributes_to_state(event[event_label], attributes_list, only_events)
+                if "AZIONE" in current_state:
+                    current_action = current_state.split('AZIONE')[0]
+                    current_state = current_state.split('AZIONE')[-1]
+                    current_action = current_action.replace('<', '')
+                    current_state = '<' + current_state
+                else:
+                    current_action = current_state.split(' | ')[0].replace("<", "").replace(">", "")
                 current_prefix += current_state
                 # first of all look if we are at the end state
                 if 'END' in current_state:
+                    reward = event[reward_label]
                     break
                 # second of all, look if the first event of a good path happens
                 # if the first event already happened then skip this step
@@ -259,39 +267,37 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
                         good_path = True
                 # third of all, look if it follows the path at the next steps
                 else:
-                    if current_state in good_next_states:
+                    if current_action in good_next_actions:
                         # i += 1
                         good_path = True  # useless, but for clarity
                     else:
                         good_path = False
                 # compute rewards
-                if 'O_ACCEPTED' in event[event_label]:
-                    reward = event[reward_label]
-                    prize = reward
+                if 'O_ACCEPTED' in current_state:
                     accepted = 1
                 duration += current_duration
                 # compute next good states from the policy rules
                 try:
-                    good_next_states = policy_rules[current_state]
+                    good_next_actions = policy_rules[current_state]
                 except Exception as e: # in the case there is not the state in the MDP model
                     print()
-                    good_next_states = []
+                    good_next_actions = []
 
 
         if good_start:
             if good_path:
                 if check_single_trace:
                     relevant_case_id_list.append(case_id)
-                    relevant_case_reward.append(- duration * cost_factor + prize)
+                    relevant_case_reward.append(reward)
                 relevant_case_number += 1
                 relevant_case_total_time += duration
                 relevant_case_accepted_number += accepted
-                relevant_case_total_prize += prize
+                relevant_case_total_prize += reward
             else:
                 complementary_case_number += 1
                 complementary_case_total_time += duration
                 complementary_case_accepted_number += accepted
-                complementary_case_total_prize += prize
+                complementary_case_total_prize += reward
 
     if relevant_case_number > 0:
         relevant_case_avg_time = relevant_case_total_time / relevant_case_number
@@ -325,7 +331,7 @@ def analysis_tr_sc3(log, policy_rules, initial_state, only_events, full_prefix, 
 
     if check_single_trace:
         output_name = 'relevant_trace_id_198173_amount.csv'
-        output_file = os.path.join("..", "..", "cluster_data", "output_performance", output_name)
+        output_file = os.path.join("..", "..", "cluster_data", "output_performances", output_name)
         with open(output_file, 'w') as f:
             write_list = [str(relevant_case_id_list[i])+','+str(relevant_case_reward[i])
                           for i in range(len(relevant_case_id_list))]
